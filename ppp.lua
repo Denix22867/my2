@@ -14,7 +14,7 @@ local currentFlyBV = nil
 local flyActive = false
 
 local function saveElements()
-    if not writefile then return end
+    if not writefile then return end 
     local data = table.concat(savedElements, "\n")
     writefile(saveFile, data)
     print("[SWILL] Сохранено элементов:", #savedElements)
