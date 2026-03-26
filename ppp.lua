@@ -2,7 +2,6 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
 local isRunning = false
@@ -12,8 +11,7 @@ local currentConnection = nil
 local savedElements = {}
 local saveFile = "swill_elements.txt"
 local currentFlyBV = nil
-local currentTarget = nil
-local lastTargetTime = 0
+local flyActive = false
 
 local function saveElements()
     if not writefile then return end
@@ -114,7 +112,7 @@ end
 local function startElementSelection()
     local oldMouseIcon = LocalPlayer:GetMouse().Icon
     LocalPlayer:GetMouse().Icon = "rbxasset://SystemCursor/Crosshair"
-    print("[SWILL] Режим выбора. Наведите курсор на элемент и нажмите клавишу. Добавлено будет до 10 элементов.")
+    print("[SWILL] Режим выбора. Наведите курсор на элемент и нажмите клавишу. До 10 элементов.")
     
     local connection
     local count = 0
@@ -149,7 +147,7 @@ local function startElementSelection()
                     count = count + 1
                     print("[SWILL] Добавлен элемент:", path, "("..count.."/10)")
                     if count >= 10 then
-                        print("[SWILL] Достигнут лимит (10). Выход из режима.")
+                        print("[SWILL] Достигнут лимит (10). Выход.")
                         connection:Disconnect()
                         LocalPlayer:GetMouse().Icon = oldMouseIcon
                     end
@@ -168,7 +166,7 @@ local function startElementSelection()
     if connection.Connected then
         connection:Disconnect()
         LocalPlayer:GetMouse().Icon = oldMouseIcon
-        print("[SWILL] Режим выбора завершён. Добавлено элементов:", count)
+        print("[SWILL] Режим выбора завершён. Добавлено:", count)
     end
 end
 
@@ -239,12 +237,12 @@ local function stopFlying()
         currentFlyBV:Destroy()
         currentFlyBV = nil
     end
+    flyActive = false
     local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
     if humanoid then
         humanoid.PlatformStand = false
         humanoid.WalkSpeed = 16
     end
-    currentTarget = nil
 end
 
 local function startFlying(targetPos)
@@ -256,8 +254,6 @@ local function startFlying(targetPos)
     
     local bv = Instance.new("BodyVelocity")
     bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-    local dir = (targetPos - rootPart.Position).Unit
-    bv.Velocity = dir * 70
     bv.Parent = rootPart
     currentFlyBV = bv
     
@@ -267,17 +263,25 @@ local function startFlying(targetPos)
         humanoid.WalkSpeed = 0
     end
     
-    currentTarget = targetPos
+    flyActive = true
 end
 
 local function updateFlight(targetPos)
+    if not flyActive or not currentFlyBV or not currentFlyBV.Parent then
+        startFlying(targetPos)
+        return
+    end
     if not LocalPlayer.Character then return end
     local rootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not rootPart or not currentFlyBV then return end
+    if not rootPart then return end
     
-    local dir = (targetPos - rootPart.Position).Unit
-    currentFlyBV.Velocity = dir * 70
-    currentTarget = targetPos
+    local direction = (targetPos - rootPart.Position).Unit
+    currentFlyBV.Velocity = direction * 65
+    
+    local look = CFrame.lookAt(rootPart.Position, targetPos)
+    local _, _, _, _, _, _, r00, r01, r02, r10, r11, r12, r20, r21, r22 = look:GetComponents()
+    local newCF = CFrame.new(rootPart.Position, targetPos)
+    rootPart.CFrame = newCF
 end
 
 local function evadeFromPlayer(playerRoot)
@@ -287,11 +291,14 @@ local function evadeFromPlayer(playerRoot)
     
     local dir = (rootPart.Position - playerRoot.Position).Unit
     local evadePos = rootPart.Position + dir * 60
-    evadePos = Vector3.new(evadePos.X, rootPart.Position.Y + 5, evadePos.Z)
+    evadePos = Vector3.new(evadePos.X, rootPart.Position.Y + 3, evadePos.Z)
     
     setNoclip(true)
     startFlying(evadePos)
-    task.wait(1.2)
+    for _ = 1, 12 do
+        updateFlight(evadePos)
+        task.wait()
+    end
     stopFlying()
     setNoclip(false)
 end
@@ -299,7 +306,7 @@ end
 local function startFarmer()
     if currentConnection then return end
     isRunning = true
-    print("[SWILL] Фармер активирован V15 (исправлен полёт и зависание)")
+    print("[SWILL] Фармер активирован V16 (исправлено вращение)")
     
     currentConnection = RunService.Heartbeat:Connect(function()
         if not isRunning then return end
@@ -345,16 +352,13 @@ local function startFarmer()
             
             if targetCoin then
                 local coinPos = targetCoin.Position
-                local currentPos = rootPart.Position
-                local dist = (coinPos - currentPos).Magnitude
+                local dist = (coinPos - rootPart.Position).Magnitude
                 
                 if dist > 3 then
-                    if not currentFlyBV then
+                    if not flyActive then
                         startFlying(coinPos)
-                    else
-                        updateFlight(coinPos)
                     end
-                    rootPart.CFrame = CFrame.new(rootPart.Position, coinPos)
+                    updateFlight(coinPos)
                 else
                     stopFlying()
                 end
@@ -405,7 +409,7 @@ corner.Parent = frame
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1,0,0,30)
-title.Text = "SWILL FARMER V15"
+title.Text = "SWILL FARMER V16"
 title.TextColor3 = Color3.fromRGB(255,255,255)
 title.BackgroundTransparency = 1
 title.Font = Enum.Font.GothamBold
@@ -539,8 +543,7 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     end
 end)
 
-print("[SWILL] V15 ЗАГРУЖЕН")
-print("[SWILL] - Плавный полёт к монетам (BodyVelocity)")
-print("[SWILL] - Автоматическая остановка при сборе")
+print("[SWILL] V16 ЗАГРУЖЕН")
+print("[SWILL] - Плавный полёт без вращения (фиксация взгляда на монете)")
 print("[SWILL] - Сохранение элементов игры")
-print("[SWILL] - Исправлено зависание персонажа")
+print("[SWILL] - Исправлено вертолётное поведение")
